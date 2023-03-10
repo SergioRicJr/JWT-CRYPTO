@@ -1,4 +1,4 @@
-import express from 'express'
+import express, { json } from 'express'
 import dotenv from 'dotenv'
 import mongoose from 'mongoose'
 import bcrypt from 'bcrypt'
@@ -27,6 +27,37 @@ app.use(express.json())
 app.get("/", (req, res)=>{
     res.status(200).json({msg: "Bem vindo a nossa API"})
 })
+
+//Private route
+app.get("/user/:id", checkToken, async (req, res)=>{
+    const id = req.params.id
+    console.log(id)
+    try {
+        const user = await User.findById(id, '-password') //exclui o campo senha do retorno
+        res.send(user)
+    } catch(err) {
+        res.status(440).json({msg:"Usário não encontrado"})
+    }
+})
+
+function checkToken(req, res, next) { //next quer dizer sucesso, prossiga
+    const authHeader = req.headers['authorization']
+    const token = authHeader && authHeader.split("")[1]
+
+    if (!token) {
+        return res.status(401).json({msg: "Acesso negado"})
+    }
+
+    try {
+        const secret = process.env.SECRET
+
+        jsonwebtoken.verify(token, secret)
+
+        next() //para acessar a rota e seguir
+    } catch(error) {
+        res.status(400).json({msg:"Token inválido"})
+    }
+}
 
 // Registro de usuario
 app.post("/auth/register", async (req, res)=>{
@@ -78,12 +109,40 @@ app.post("/auth/register", async (req, res)=>{
 
 })
 
-app.post("/auth/user", async (req, res)=>{
-    const {name, password} = req.body
+app.post("/auth/login", async (req, res)=>{
+    const {email, password} = req.body
 
-    if (!name) {
-        
+    if (!email) {
+        res.status(422).json({msg: "O email é obrigatório"}) // 422 quando o servidor entende mas os dados nao estao corretos
+    } 
+    if (!password) {
+        res.status(422).json({msg: "A senha é obrigatória"})
     }
+    // checar se o usuario existe
+    const user = await User.findOne({email:email})
+
+    if (!user) {
+        return res.status(422).json({msg:"O usuario não foi encontrado"})
+    }
+
+    //chechar senha
+    const checkPassword = await bcrypt.compare(password, user.password)
+    if (!checkPassword) {
+        return res.status(422).json({msg:"Senha inválida"})
+    } 
+
+    try {
+        const secret = process.env.secret
+
+        const token = jsonwebtoken.sign({
+            id: user._id
+        }, secret)
+
+        res.status(200).json({msg:"Autenticação realizada com sucesso", token: token})
+    } catch(err) {
+        res.status(422).json({msg:err.message})
+    }
+
 
 })
 
